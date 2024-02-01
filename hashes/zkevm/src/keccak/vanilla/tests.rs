@@ -240,24 +240,37 @@ fn packed_multi_keccak_simple(k: u32, rows_per_round: usize) {
     }
 }
 
-#[test_case(14, 25 ; "k: 14, rows_per_round: 25")]
-#[test_case(18, 9 ; "k: 18, rows_per_round: 9")]
-fn packed_multi_keccak_prover(k: u32, rows_per_round: usize) {
+#[test_case(9, 25, 0)]
+#[test_case(10, 25, 0)]
+#[test_case(11, 25, 0)]
+#[test_case(12, 25, 0)]
+#[test_case(13, 25, 0)]
+#[test_case(8, 9, 0)]
+#[test_case(9, 9, 0)]
+#[test_case(10, 9, 0)]
+#[test_case(11, 9, 0)]
+
+#[test_case(11, 25, 532)]
+#[test_case(12, 25, 532)]
+#[test_case(13, 25, 532)]
+#[test_case(10, 9, 532)]
+#[test_case(11, 9, 532)]
+#[test_case(12, 9, 532)]
+
+#[test_case(16, 25, 10000)]
+#[test_case(15, 9, 10000)]
+fn packed_multi_keccak_prover(k: u32, rows_per_round: usize, input_bytes_length: usize) {
     let _ = env_logger::builder().is_test(true).try_init();
 
     let params = ParamsKZG::<Bn256>::setup(k, OsRng);
 
-    let inputs = vec![
-        (0u8..200).collect::<Vec<_>>(),
-        vec![],
-        (0u8..1).collect::<Vec<_>>(),
-        (0u8..135).collect::<Vec<_>>(),
-        (0u8..136).collect::<Vec<_>>(),
+    let inputs: Vec<Vec<u8>> = vec![
+        vec![13; input_bytes_length]
     ];
     let circuit = KeccakCircuit::new(
         KeccakConfigParams { k, rows_per_round },
         Some(2usize.pow(k)),
-        inputs,
+        inputs.clone(),
         false,
     );
 
@@ -278,7 +291,8 @@ fn packed_multi_keccak_prover(k: u32, rows_per_round: usize) {
     >(&params, &pk, &[circuit], &[&[]], OsRng, &mut transcript)
     .expect("proof generation should not fail");
     let proof = transcript.finalize();
-    dbg!(start.elapsed());
+    let prove_time = start.elapsed();
+    dbg!(prove_time);
 
     let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
     let strategy = SingleStrategy::new(&params);
@@ -290,7 +304,10 @@ fn packed_multi_keccak_prover(k: u32, rows_per_round: usize) {
         Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
         SingleStrategy<'_, Bn256>,
     >(&verifier_params, pk.get_vk(), strategy, &[&[]], &mut verifier_transcript)
-    .expect("failed to verify bench circuit");
+        .expect("failed to verify bench circuit");
+    let verify_time = start.elapsed() - prove_time;
+    let total_length: usize = inputs.iter().map(|x| { x.len() }).sum();
+    println!("| {} | {} | {} | {:?} | {:?} |", k, rows_per_round, total_length, prove_time, verify_time);
 }
 
 // Keccak Known Answer Test (KAT) vectors from https://keccak.team/obsolete/KeccakKAT-3.zip.
